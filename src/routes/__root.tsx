@@ -77,20 +77,24 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
-      { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { title: "DiagnosisAI — Clinical Decision Support" },
+      {
+        name: "description",
+        content:
+          "AI-powered differential diagnosis tool for clinical decision support and medical education. Powered by Groq LLaMA 3.3.",
+      },
+      { name: "author", content: "Satya Sundar Thakur" },
+      { property: "og:title", content: "DiagnosisAI — Clinical Decision Support" },
+      {
+        property: "og:description",
+        content:
+          "Generate structured differential diagnoses with clinical reasoning using AI.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:site", content: "@Lovable" },
     ],
     links: [
-      {
-        rel: "stylesheet",
-        href: appCss,
-      },
+      { rel: "stylesheet", href: appCss },
       { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
     ],
   }),
@@ -119,7 +123,6 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
       <Outlet />
     </QueryClientProvider>
   );
