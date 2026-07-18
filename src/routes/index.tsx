@@ -1,977 +1,1038 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useCallback, useRef, type DragEvent, type ChangeEvent } from "react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
-import {
-  Stethoscope,
-  Brain,
-  AlertTriangle,
-  CheckCircle2,
-  ChevronDown,
-  ChevronUp,
-  Loader2,
-  ClipboardList,
-  ShieldAlert,
-  Activity,
-  Key,
-  Upload,
-  FileText,
-  ImageIcon,
-  X,
-  Download,
-  FileSearch,
-  Paperclip,
-} from "lucide-react";
+  useState, useCallback, useRef, useEffect,
+  type DragEvent, type ChangeEvent, type CSSProperties
+} from "react";
 
 export const Route = createFileRoute("/")(
   { component: DiagnosisAI }
 );
 
-// ─── constants ───────────────────────────────────────────────────────────────
+/* ─────────────── INJECTED STYLES ─────────────── */
+const STYLES = `
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700;800&display=swap');
 
+:root { --mx: 50vw; --my: 50vh; }
+
+* { box-sizing: border-box; }
+
+.dia-app {
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+  min-height: 100vh;
+  background: radial-gradient(ellipse at 20% 10%, #1a0030 0%, #06060F 55%, #001420 100%);
+  color: #fff;
+  overflow-x: hidden;
+  position: relative;
+}
+
+/* cursor glow */
+.dia-cursor {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  background: radial-gradient(circle 480px at var(--mx) var(--my),
+    rgba(170,0,255,0.13) 0%,
+    rgba(41,121,255,0.10) 30%,
+    rgba(0,229,255,0.06) 60%,
+    transparent 80%);
+  transition: background 0.05s;
+}
+
+/* doodles */
+.dia-doodle {
+  position: absolute;
+  pointer-events: none;
+  user-select: none;
+  opacity: 0.13;
+}
+
+@keyframes dia-float {
+  0%,100% { transform: translateY(0) rotate(0deg); }
+  50%      { transform: translateY(-22px) rotate(6deg); }
+}
+@keyframes dia-float2 {
+  0%,100% { transform: translateY(0) rotate(5deg); }
+  50%      { transform: translateY(-14px) rotate(-4deg); }
+}
+@keyframes dia-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@keyframes dia-orbit {
+  from { transform: rotate(0deg) translateX(28px) rotate(0deg); }
+  to   { transform: rotate(360deg) translateX(28px) rotate(-360deg); }
+}
+@keyframes dia-draw {
+  0%   { stroke-dashoffset: 900; opacity: 0; }
+  10%  { opacity: 1; }
+  80%  { opacity: 1; }
+  100% { stroke-dashoffset: 0; opacity: 0; }
+}
+@keyframes dia-pulse-dot {
+  0%,100% { transform: scale(1); opacity: 0.5; }
+  50%      { transform: scale(1.6); opacity: 1; }
+}
+@keyframes dia-dna {
+  0%   { transform: translateY(0);   }
+  100% { transform: translateY(-80px); }
+}
+
+/* glass card */
+.dia-card {
+  background: rgba(255,255,255,0.04);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 20px;
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+  position: relative;
+  overflow: hidden;
+}
+.dia-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 20px;
+  opacity: 0;
+  transition: opacity 0.3s;
+  background: radial-gradient(circle 300px at var(--cx,50%) var(--cy,50%),
+    rgba(255,255,255,0.06) 0%, transparent 70%);
+  pointer-events: none;
+}
+.dia-card:hover::before { opacity: 1; }
+
+/* glow colours per card */
+.dia-card.glow-cyan:hover   { box-shadow: 0 0 0 1px rgba(0,229,255,0.4), 0 8px 40px rgba(0,229,255,0.18); border-color: rgba(0,229,255,0.35); transform: translateY(-2px); }
+.dia-card.glow-violet:hover { box-shadow: 0 0 0 1px rgba(170,0,255,0.45), 0 8px 40px rgba(170,0,255,0.18); border-color: rgba(170,0,255,0.4); transform: translateY(-2px); }
+.dia-card.glow-green:hover  { box-shadow: 0 0 0 1px rgba(0,230,118,0.4), 0 8px 40px rgba(0,230,118,0.18); border-color: rgba(0,230,118,0.35); transform: translateY(-2px); }
+.dia-card.glow-orange:hover { box-shadow: 0 0 0 1px rgba(255,109,0,0.4), 0 8px 40px rgba(255,109,0,0.18); border-color: rgba(255,109,0,0.35); transform: translateY(-2px); }
+.dia-card.glow-red:hover    { box-shadow: 0 0 0 1px rgba(255,23,68,0.4), 0 8px 40px rgba(255,23,68,0.18); border-color: rgba(255,23,68,0.35); transform: translateY(-2px); }
+.dia-card.glow-blue:hover   { box-shadow: 0 0 0 1px rgba(41,121,255,0.4), 0 8px 40px rgba(41,121,255,0.18); border-color: rgba(41,121,255,0.35); transform: translateY(-2px); }
+.dia-card.glow-rainbow:hover {
+  box-shadow: 0 0 0 1px rgba(170,0,255,0.5), 0 8px 50px rgba(0,229,255,0.2), 0 0 80px rgba(255,23,68,0.1);
+  border-color: rgba(170,0,255,0.5);
+  transform: translateY(-2px);
+}
+
+/* inputs */
+.dia-input {
+  width: 100%;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 12px;
+  color: #fff;
+  font-family: inherit;
+  font-size: 14px;
+  padding: 10px 14px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  -webkit-appearance: none;
+}
+.dia-input::placeholder { color: rgba(255,255,255,0.28); }
+.dia-input:focus {
+  border-color: rgba(0,229,255,0.5);
+  box-shadow: 0 0 0 3px rgba(0,229,255,0.12);
+}
+textarea.dia-input { resize: none; line-height: 1.55; }
+select.dia-input { cursor: pointer; }
+select.dia-input option { background: #12122a; color: #fff; }
+
+/* label */
+.dia-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgba(255,255,255,0.45);
+  margin-bottom: 6px;
+}
+
+/* section title */
+.dia-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgba(255,255,255,0.4);
+  margin: 0 0 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dia-section-title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(255,255,255,0.08);
+}
+
+/* rainbow gradient text */
+.dia-rainbow-text {
+  background: linear-gradient(90deg, #FF1744, #FF6D00, #FFD600, #00E676, #00E5FF, #2979FF, #AA00FF);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* upload zone rainbow border */
+@keyframes dia-rainbow-border {
+  0%   { box-shadow: 0 0 0 2px #FF1744, 0 0 18px rgba(255,23,68,0.3); }
+  14%  { box-shadow: 0 0 0 2px #FF6D00, 0 0 18px rgba(255,109,0,0.3); }
+  28%  { box-shadow: 0 0 0 2px #FFD600, 0 0 18px rgba(255,214,0,0.3); }
+  42%  { box-shadow: 0 0 0 2px #00E676, 0 0 18px rgba(0,230,118,0.3); }
+  57%  { box-shadow: 0 0 0 2px #00E5FF, 0 0 18px rgba(0,229,255,0.3); }
+  71%  { box-shadow: 0 0 0 2px #2979FF, 0 0 18px rgba(41,121,255,0.3); }
+  85%  { box-shadow: 0 0 0 2px #AA00FF, 0 0 18px rgba(170,0,255,0.3); }
+  100% { box-shadow: 0 0 0 2px #FF1744, 0 0 18px rgba(255,23,68,0.3); }
+}
+.dia-upload-zone {
+  border: 2px dashed rgba(255,255,255,0.15);
+  border-radius: 16px;
+  padding: 32px 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.25s;
+  background: rgba(255,255,255,0.02);
+}
+.dia-upload-zone:hover,
+.dia-upload-zone.dragging {
+  animation: dia-rainbow-border 3s linear infinite;
+  background: rgba(255,255,255,0.05);
+}
+
+/* chip system selector */
+.dia-chip {
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.15);
+  padding: 5px 13px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.18s;
+  background: transparent;
+  color: rgba(255,255,255,0.6);
+  font-family: inherit;
+}
+.dia-chip:hover {
+  border-color: rgba(255,255,255,0.35);
+  color: #fff;
+  transform: translateY(-1px);
+}
+.dia-chip.active {
+  background: linear-gradient(135deg, #AA00FF 0%, #2979FF 50%, #00E5FF 100%);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 4px 20px rgba(170,0,255,0.35);
+}
+
+/* rainbow button */
+@keyframes dia-btn-glow {
+  0%,100% { box-shadow: 0 0 25px rgba(170,0,255,0.5), 0 4px 15px rgba(0,229,255,0.3); }
+  50%      { box-shadow: 0 0 40px rgba(255,23,68,0.5), 0 4px 20px rgba(255,214,0,0.3); }
+}
+.dia-btn-rainbow {
+  width: 100%;
+  height: 48px;
+  border-radius: 14px;
+  border: none;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+  cursor: pointer;
+  background: linear-gradient(135deg, #FF1744 0%, #FF6D00 20%, #FFD600 40%, #00E676 60%, #00E5FF 80%, #AA00FF 100%);
+  background-size: 200%;
+  animation: dia-btn-glow 3s ease-in-out infinite;
+  transition: transform 0.15s, filter 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  letter-spacing: 0.02em;
+}
+.dia-btn-rainbow:hover:not(:disabled) { transform: translateY(-2px) scale(1.01); filter: brightness(1.1); }
+.dia-btn-rainbow:active:not(:disabled) { transform: scale(0.98); }
+.dia-btn-rainbow:disabled { opacity: 0.55; cursor: not-allowed; animation: none; filter: grayscale(0.5); }
+
+.dia-btn-secondary {
+  height: 48px;
+  padding: 0 20px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.07);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.75);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.dia-btn-secondary:hover { background: rgba(255,255,255,0.12); color: #fff; transform: translateY(-1px); }
+
+.dia-btn-download {
+  width: 100%;
+  height: 48px;
+  border-radius: 14px;
+  border: none;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+  cursor: pointer;
+  background: linear-gradient(135deg, #00E676 0%, #00E5FF 50%, #2979FF 100%);
+  box-shadow: 0 4px 20px rgba(0,229,255,0.3);
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.dia-btn-download:hover { transform: translateY(-2px); box-shadow: 0 6px 30px rgba(0,229,255,0.45); }
+
+/* accordion toggle */
+.dia-api-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.6);
+  border-radius: 20px;
+  transition: color 0.2s;
+}
+.dia-api-toggle:hover { color: rgba(255,255,255,0.9); }
+
+/* file item */
+.dia-file-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.04);
+  transition: border-color 0.2s;
+}
+.dia-file-item:hover { border-color: rgba(0,229,255,0.3); }
+
+/* results */
+.dia-diff-item {
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.09);
+  background: rgba(255,255,255,0.04);
+  padding: 14px 16px;
+  transition: all 0.2s;
+}
+.dia-diff-item:hover { border-color: rgba(0,229,255,0.25); background: rgba(0,229,255,0.04); }
+
+.dia-badge-high     { background: rgba(255,23,68,0.2);   border: 1px solid rgba(255,23,68,0.4);   color: #FF6B85; }
+.dia-badge-moderate { background: rgba(255,214,0,0.15);  border: 1px solid rgba(255,214,0,0.4);   color: #FFD600; }
+.dia-badge-low      { background: rgba(0,229,255,0.12);  border: 1px solid rgba(0,229,255,0.35);  color: #00E5FF; }
+.dia-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+/* error box */
+.dia-error {
+  border-radius: 14px;
+  border: 1px solid rgba(255,23,68,0.35);
+  background: rgba(255,23,68,0.1);
+  padding: 14px 16px;
+  font-size: 13px;
+  color: #FF8095;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+/* empty state */
+.dia-empty {
+  min-height: 400px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 24px;
+  border: 2px dashed rgba(255,255,255,0.1);
+  text-align: center;
+  padding: 48px 32px;
+  background: rgba(255,255,255,0.02);
+}
+
+/* loading */
+.dia-loading {
+  min-height: 400px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 24px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.02);
+  text-align: center;
+  padding: 48px 32px;
+}
+@keyframes dia-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.dia-spinner {
+  width: 44px;
+  height: 44px;
+  border: 3px solid rgba(255,255,255,0.08);
+  border-top-color: #00E5FF;
+  border-radius: 50%;
+  animation: dia-spin 0.9s linear infinite;
+  margin-bottom: 16px;
+}
+
+/* scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+`;
+
+/* ─────────────── CONSTANTS ─────────────── */
 const BODY_SYSTEMS = [
   "Cardiovascular","Respiratory","Gastrointestinal","Neurological",
   "Musculoskeletal","Genitourinary","Endocrine","Dermatological",
-  "Haematological","Ophthalmological","ENT","Psychiatric",
-  "Immunological","Hepatobiliary",
+  "Haematological","Ophthalmological","ENT","Psychiatric","Immunological","Hepatobiliary",
 ];
-
 const DURATIONS = [
-  { value: "hours",   label: "Hours (< 24 h)" },
-  { value: "days",    label: "Days (1–7 days)" },
-  { value: "weeks",   label: "Weeks (1–4 weeks)" },
-  { value: "months",  label: "Months (1–6 months)" },
-  { value: "chronic", label: "Chronic (> 6 months)" },
+  { value:"", label:"Select duration" },
+  { value:"hours",   label:"Hours (< 24 h)" },
+  { value:"days",    label:"Days (1–7 days)" },
+  { value:"weeks",   label:"Weeks (1–4 weeks)" },
+  { value:"months",  label:"Months (1–6 months)" },
+  { value:"chronic", label:"Chronic (> 6 months)" },
 ];
-
 const SEVERITIES = [
-  { value: "mild",     label: "Mild – tolerable, daily life unaffected" },
-  { value: "moderate", label: "Moderate – noticeable, some limitation" },
-  { value: "severe",   label: "Severe – significant limitation" },
-  { value: "critical", label: "Critical – emergency presentation" },
+  { value:"", label:"Select severity" },
+  { value:"mild",     label:"Mild – tolerable" },
+  { value:"moderate", label:"Moderate – some limitation" },
+  { value:"severe",   label:"Severe – significant limitation" },
+  { value:"critical", label:"Critical – emergency" },
 ];
+const ACCEPTED = ["image/jpeg","image/png","image/webp","application/pdf","text/plain"];
 
-const ACCEPTED_TYPES = ["image/jpeg","image/png","image/webp","application/pdf","text/plain"];
-
-// ─── types ───────────────────────────────────────────────────────────────────
-
+/* ─────────────── TYPES ─────────────── */
 interface UploadedFile {
-  id: string;
-  file: File;
-  name: string;
-  type: "image" | "pdf" | "text";
-  size: string;
-  base64?: string;
-  extractedText?: string;
-  preview?: string;
+  id:string; file:File; name:string;
+  type:"image"|"pdf"|"text"; size:string;
+  base64?:string; extractedText?:string; preview?:string;
 }
-
 interface Differential {
-  rank: number;
-  diagnosis: string;
-  likelihood: "High" | "Moderate" | "Low";
-  reasoning: string;
+  rank:number; diagnosis:string;
+  likelihood:"High"|"Moderate"|"Low"; reasoning:string;
 }
-
 interface DiagnosisResult {
-  summary: string;
-  differentials: Differential[];
-  investigationFindings: string[];
-  redFlags: string[];
-  recommendedWorkup: string[];
-  managementPlan: string[];
-  clinicalPearl: string;
-  disclaimer: string;
+  summary:string;
+  differentials:Differential[];
+  investigationFindings:string[];
+  redFlags:string[];
+  recommendedWorkup:string[];
+  managementPlan:string[];
+  clinicalPearl:string;
+  disclaimer:string;
 }
 
-// ─── file helpers ─────────────────────────────────────────────────────────────
+/* ─────────────── FILE HELPERS ─────────────── */
+const fmtSize = (b:number) => b < 1024 ? `${b} B` : b < 1048576 ? `${(b/1024).toFixed(1)} KB` : `${(b/1048576).toFixed(1)} MB`;
+const fileKind = (f:File):"image"|"pdf"|"text" =>
+  f.type.startsWith("image/") ? "image" : f.type === "application/pdf" ? "pdf" : "text";
 
-function fmtSize(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function fileKind(f: File): "image" | "pdf" | "text" {
-  if (f.type.startsWith("image/")) return "image";
-  if (f.type === "application/pdf") return "pdf";
-  return "text";
-}
-
-async function toBase64(file: File): Promise<string> {
-  return new Promise((res, rej) => {
-    const r = new FileReader();
-    r.onload = () => {
-      const result = r.result as string;
-      res(result.split(",")[1]);
-    };
-    r.onerror = () => rej(new Error("Read failed"));
-    r.readAsDataURL(file);
-  });
-}
-
-async function toDataURL(file: File): Promise<string> {
-  return new Promise((res, rej) => {
-    const r = new FileReader();
-    r.onload = () => res(r.result as string);
-    r.onerror = () => rej(new Error("Read failed"));
-    r.readAsDataURL(file);
-  });
-}
-
-async function extractPDFText(file: File): Promise<string> {
-  // Basic client-side text extraction from PDF binary
-  const buf = await file.arrayBuffer();
-  const raw = new TextDecoder("latin1").decode(new Uint8Array(buf));
-  // Extract strings inside parentheses (PDF text operators)
-  const chunks: string[] = [];
-  const re = /\(([^)\\]{3,})\)/g;
-  let m;
+const toBase64 = (f:File) => new Promise<string>((res,rej) => {
+  const r = new FileReader();
+  r.onload = () => res((r.result as string).split(",")[1]);
+  r.onerror = () => rej(new Error("Read failed"));
+  r.readAsDataURL(f);
+});
+const toDataURL = (f:File) => new Promise<string>((res,rej) => {
+  const r = new FileReader();
+  r.onload = () => res(r.result as string);
+  r.onerror = () => rej(new Error("Read failed"));
+  r.readAsDataURL(f);
+});
+const extractPDFText = async (file:File) => {
+  const raw = new TextDecoder("latin1").decode(new Uint8Array(await file.arrayBuffer()));
+  const chunks:string[] = [];
+  const re = /\(([^)\\]{3,})\)/g; let m;
   while ((m = re.exec(raw)) !== null) {
-    const s = m[1].replace(/\\n/g, "\n").replace(/\\r/g, "").trim();
-    if (s.length > 2 && /[a-zA-Z0-9]/.test(s)) chunks.push(s);
+    const s = m[1].replace(/\\n/g,"\n").trim();
+    if (s.length>2 && /[a-zA-Z0-9]/.test(s)) chunks.push(s);
   }
-  const result = chunks.join(" ").replace(/\s{2,}/g, " ").trim();
-  return result.length > 100 ? result.slice(0, 8000) : `[PDF file: ${file.name} — text extraction limited; AI will interpret from filename and context]`;
-}
-
-async function readTextFile(file: File): Promise<string> {
-  return new Promise((res, rej) => {
-    const r = new FileReader();
-    r.onload = () => res((r.result as string).slice(0, 8000));
-    r.onerror = () => rej(new Error("Read failed"));
-    r.readAsText(file);
-  });
-}
-
-async function processFile(file: File): Promise<UploadedFile> {
+  const txt = chunks.join(" ").replace(/\s{2,}/g," ").trim();
+  return txt.length>100 ? txt.slice(0,8000) : `[PDF: ${file.name} — context from filename only]`;
+};
+const readTextFile = (f:File) => new Promise<string>((res,rej) => {
+  const r = new FileReader();
+  r.onload = () => res((r.result as string).slice(0,8000));
+  r.onerror = () => rej(new Error("failed")); r.readAsText(f);
+});
+async function processFile(file:File):Promise<UploadedFile> {
   const kind = fileKind(file);
-  const uf: UploadedFile = {
-    id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-    file,
-    name: file.name,
-    type: kind,
-    size: fmtSize(file.size),
-  };
-  if (kind === "image") {
-    const dataUrl = await toDataURL(file);
-    uf.base64 = await toBase64(file);
-    uf.preview = dataUrl;
-  } else if (kind === "pdf") {
-    uf.extractedText = await extractPDFText(file);
-  } else {
-    uf.extractedText = await readTextFile(file);
-  }
+  const uf:UploadedFile = { id:`${Date.now()}-${Math.random().toString(36).slice(2)}`, file, name:file.name, type:kind, size:fmtSize(file.size) };
+  if (kind==="image") { uf.preview = await toDataURL(file); uf.base64 = await toBase64(file); }
+  else if (kind==="pdf") { uf.extractedText = await extractPDFText(file); }
+  else { uf.extractedText = await readTextFile(file); }
   return uf;
 }
 
-// ─── AI helpers ──────────────────────────────────────────────────────────────
+/* ─────────────── AI HELPERS ─────────────── */
+function buildPrompt(age:string,sex:string,cc:string,dur:string,sev:string,sys:string[],hist:string,files:UploadedFile[]) {
+  const fc = files.length ? files.map(f=>f.type==="image"?`[IMAGE: ${f.name} — vision-analysed]`:`[DOC: ${f.name}]\n${f.extractedText??""}`).join("\n\n---\n\n") : null;
+  return `You are a senior clinician. Provide a structured differential diagnosis and clinical analysis for an AI decision-support tool.
 
-function buildPrompt(
-  age: string, sex: string, chiefComplaint: string,
-  duration: string, severity: string, systems: string[],
-  history: string, uploadedFiles: UploadedFile[]
-): string {
-  const fileContext = uploadedFiles.length
-    ? uploadedFiles.map(f => {
-        if (f.type === "image") return `[IMAGE FILE]: ${f.name} — visual analysis requested`;
-        return `[DOCUMENT: ${f.name}]\n${f.extractedText ?? "No text extracted"}`;
-      }).join("\n\n---\n\n")
-    : null;
+PATIENT: Age ${age||"?"}, Sex ${sex||"?"}, Duration ${dur||"?"}, Severity ${sev||"?"}
+Body systems: ${sys.join(", ")||"not specified"}
+Chief complaint: ${cc||"see uploaded documents"}
+History/notes: ${hist||"none"}
+${fc?`\nUPLOADED FILES:\n${fc}`:""}
 
-  return `You are a senior clinician and consultant providing a structured clinical analysis and differential diagnosis for an AI decision-support platform. Analyze ALL provided information including any uploaded investigation reports, prescriptions, and documents.
-
-PATIENT DETAILS:
-- Age: ${age || "Not specified"}
-- Sex: ${sex || "Not specified"}
-- Chief complaint: ${chiefComplaint || "Not provided"}
-- Duration: ${duration || "Not specified"}
-- Severity: ${severity || "Not specified"}
-- Body systems involved: ${systems.length ? systems.join(", ") : "Not specified"}
-- Relevant history / notes: ${history || "None"}
-${fileContext ? `\nUPLOADED INVESTIGATIONS & DOCUMENTS:\n${fileContext}` : ""}
-
-Respond ONLY with valid JSON (no markdown fences, no extra keys) matching this schema exactly:
+Respond ONLY in valid JSON (no fences):
 {
-  "summary": "2-3 sentence clinical summary integrating all provided information including any investigation findings",
-  "differentials": [
-    { "rank": 1, "diagnosis": "string", "likelihood": "High", "reasoning": "2-3 sentences citing relevant clinical features and investigations" }
-  ],
-  "investigationFindings": ["Key abnormal or notable finding from uploaded reports (empty array if no uploads)"],
-  "redFlags": ["string — features suggesting serious/life-threatening conditions"],
-  "recommendedWorkup": ["string — specific investigations to order next"],
-  "managementPlan": ["string — immediate management steps"],
-  "clinicalPearl": "One memorable teaching point relevant to this case",
-  "disclaimer": "One-line medical-legal disclaimer"
+  "summary":"2-3 sentence clinical summary integrating all information",
+  "differentials":[{"rank":1,"diagnosis":"...","likelihood":"High|Moderate|Low","reasoning":"2-3 sentences"}],
+  "investigationFindings":["key finding from uploaded reports (empty if no uploads)"],
+  "redFlags":["urgent features"],
+  "recommendedWorkup":["investigations to order"],
+  "managementPlan":["immediate steps"],
+  "clinicalPearl":"one memorable teaching point",
+  "disclaimer":"one-line medical-legal disclaimer"
+}
+Return 4–6 differentials, 3–6 management steps.`;
 }
 
-Return 4-6 differentials. investigationFindings should highlight key abnormalities from uploaded documents. managementPlan should have 3-5 actionable steps.`;
+async function callGroqText(key:string, prompt:string):Promise<DiagnosisResult> {
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions",{
+    method:"POST",
+    headers:{"Content-Type":"application/json","Authorization":`Bearer ${key}`},
+    body:JSON.stringify({model:"llama-3.3-70b-versatile",messages:[{role:"user",content:prompt}],temperature:0.3,max_tokens:2000}),
+  });
+  if (!res.ok) { const e = await res.json().catch(()=>({})) as {error?:{message?:string}}; throw new Error(e?.error?.message??`Groq ${res.status}`); }
+  const d = await res.json() as {choices:Array<{message:{content:string}}>};
+  return JSON.parse(d.choices[0].message.content.replace(/```json|```/g,"").trim()) as DiagnosisResult;
 }
 
-async function callGroqText(apiKey: string, prompt: string): Promise<DiagnosisResult> {
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model: "llama-3.3-70b-versatile",
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.3,
-      max_tokens: 2000,
+async function callGroqVision(key:string, b64:string, mime:string):Promise<string> {
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions",{
+    method:"POST",
+    headers:{"Content-Type":"application/json","Authorization":`Bearer ${key}`},
+    body:JSON.stringify({
+      model:"meta-llama/llama-4-scout-17b-16e-instruct",
+      messages:[{role:"user",content:[
+        {type:"image_url",image_url:{url:`data:${mime};base64,${b64}`}},
+        {type:"text",text:"Analyse this medical image/report. List: 1) Investigation type, 2) Key findings (normal & abnormal), 3) Significant abnormalities, 4) Clinical interpretation. Be specific, use medical terminology. Max 300 words."},
+      ]}],
+      temperature:0.2, max_tokens:600,
     }),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({})) as { error?: { message?: string } };
-    throw new Error(err?.error?.message ?? `Groq error ${res.status}`);
-  }
-  const data = await res.json() as { choices: Array<{ message: { content: string } }> };
-  const text = data.choices[0]?.message?.content ?? "";
-  return JSON.parse(text.replace(/```json|```/g, "").trim()) as DiagnosisResult;
+  if (!res.ok) { const e = await res.json().catch(()=>({})) as {error?:{message?:string}}; throw new Error(e?.error?.message??`Vision ${res.status}`); }
+  const d = await res.json() as {choices:Array<{message:{content:string}}>};
+  return d.choices[0].message.content;
 }
 
-async function callGroqVision(apiKey: string, prompt: string, imageBase64: string, mimeType: string): Promise<string> {
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model: "meta-llama/llama-4-scout-17b-16e-instruct",
-      messages: [{
-        role: "user",
-        content: [
-          { type: "image_url", image_url: { url: `data:${mimeType};base64,${imageBase64}` } },
-          { type: "text", text: `You are a clinical radiologist and pathologist. Analyze this medical image/report and extract all clinically relevant findings. List: 1) What type of investigation this appears to be, 2) Key findings (normal and abnormal), 3) Significant abnormalities if any, 4) Clinical interpretation. Be specific and use medical terminology. Limit to 300 words.` },
-        ],
-      }],
-      temperature: 0.2,
-      max_tokens: 600,
-    }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({})) as { error?: { message?: string } };
-    throw new Error(err?.error?.message ?? `Vision API error ${res.status}`);
+async function runDiagnosis(key:string,age:string,sex:string,cc:string,dur:string,sev:string,sys:string[],hist:string,files:UploadedFile[]):Promise<DiagnosisResult> {
+  const enriched:UploadedFile[] = [];
+  for (const f of files) {
+    if (f.type==="image"&&f.base64) {
+      try { enriched.push({...f, extractedText: await callGroqVision(key,f.base64,f.file.type)}); }
+      catch { enriched.push({...f, extractedText:`[Image: ${f.name} — vision unavailable]`}); }
+    } else { enriched.push(f); }
   }
-  const data = await res.json() as { choices: Array<{ message: { content: string } }> };
-  return data.choices[0]?.message?.content ?? "";
+  return callGroqText(key, buildPrompt(age,sex,cc,dur,sev,sys,hist,enriched));
 }
 
-async function runDiagnosis(
-  apiKey: string, age: string, sex: string, chiefComplaint: string,
-  duration: string, severity: string, systems: string[],
-  history: string, uploadedFiles: UploadedFile[]
-): Promise<DiagnosisResult> {
-  // Step 1: For image files, run vision analysis first and attach findings as text
-  const enrichedFiles: UploadedFile[] = [];
-  for (const f of uploadedFiles) {
-    if (f.type === "image" && f.base64) {
-      try {
-        const visionText = await callGroqVision(apiKey, "", f.base64, f.file.type);
-        enrichedFiles.push({ ...f, extractedText: visionText });
-      } catch {
-        enrichedFiles.push({ ...f, extractedText: `[Image: ${f.name} — vision analysis unavailable]` });
-      }
-    } else {
-      enrichedFiles.push(f);
-    }
-  }
-  // Step 2: Full clinical analysis
-  const prompt = buildPrompt(age, sex, chiefComplaint, duration, severity, systems, history, enrichedFiles);
-  return callGroqText(apiKey, prompt);
-}
-
-// ─── PDF Report Generator ─────────────────────────────────────────────────────
-
-function generateAndDownloadPDF(
-  result: DiagnosisResult,
-  patientInfo: { age: string; sex: string; chiefComplaint: string; duration: string; severity: string },
-  uploadedFiles: UploadedFile[]
-) {
+/* ─────────────── PDF REPORT ─────────────── */
+function openPDFReport(result:DiagnosisResult, pi:{age:string;sex:string;chiefComplaint:string;duration:string;severity:string}, files:UploadedFile[]) {
   const now = new Date();
-  const dateStr = now.toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" });
-  const timeStr = now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
-
-  const diffRows = result.differentials.map(d => `
-    <tr>
-      <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#1e293b;">${d.rank}. ${d.diagnosis}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:center;">
-        <span style="padding:2px 10px;border-radius:20px;font-size:11px;font-weight:600;background:${
-          d.likelihood === "High" ? "#fee2e2" : d.likelihood === "Moderate" ? "#fef3c7" : "#dbeafe"
-        };color:${
-          d.likelihood === "High" ? "#991b1b" : d.likelihood === "Moderate" ? "#92400e" : "#1e40af"
-        };">${d.likelihood}</span>
-      </td>
-      <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;font-size:13px;color:#475569;">${d.reasoning}</td>
-    </tr>`).join("");
-
-  const listItems = (arr: string[], color = "#0F4C81") => arr.map(item =>
-    `<li style="margin:4px 0;color:#334155;font-size:13px;"><span style="color:${color};margin-right:6px;">•</span>${item}</li>`
-  ).join("");
-
-  const filesSection = uploadedFiles.length ? `
-    <div style="margin-bottom:24px;padding:16px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">
-      <h3 style="margin:0 0 10px;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#64748b;">Uploaded Documents</h3>
-      ${uploadedFiles.map(f => `<div style="font-size:13px;color:#475569;margin:4px 0;">📎 ${f.name} (${f.size})</div>`).join("")}
-    </div>` : "";
-
-  const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<title>DiagnosisAI Report — ${dateStr}</title>
-<style>
-  @media print {
-    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    .no-print { display: none !important; }
-    @page { margin: 18mm 15mm; }
-  }
-  body { font-family: 'Segoe UI', Arial, sans-serif; color: #1e293b; margin: 0; padding: 0; background: #fff; }
-  .header { background: linear-gradient(135deg, #0F4C81 0%, #0a3460 100%); color: white; padding: 24px 32px; }
-  .header h1 { margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.5px; }
-  .header h1 span { color: #00D4BE; }
-  .header p { margin: 4px 0 0; font-size: 12px; opacity: 0.8; letter-spacing: 0.1em; text-transform: uppercase; }
-  .meta-bar { background: #00A896; padding: 10px 32px; display: flex; justify-content: space-between; align-items: center; }
-  .meta-bar span { color: white; font-size: 12px; font-weight: 500; }
-  .body { padding: 28px 32px; }
-  .patient-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-bottom: 24px; }
-  .patient-cell { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; }
-  .patient-cell label { display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; margin-bottom: 3px; }
-  .patient-cell span { font-size: 14px; font-weight: 600; color: #1e293b; }
-  .complaint-box { background: #eff6ff; border-left: 4px solid #0F4C81; border-radius: 6px; padding: 14px 16px; margin-bottom: 24px; }
-  .complaint-box label { font-size: 11px; font-weight: 700; text-transform: uppercase; color: #3b82f6; letter-spacing: 0.08em; }
-  .complaint-box p { margin: 6px 0 0; font-size: 14px; color: #1e293b; font-weight: 500; }
-  .summary-box { background: #f0fdf4; border-left: 4px solid #00A896; border-radius: 6px; padding: 14px 16px; margin-bottom: 24px; }
-  .summary-box label { font-size: 11px; font-weight: 700; text-transform: uppercase; color: #059669; letter-spacing: 0.08em; }
-  .summary-box p { margin: 6px 0 0; font-size: 13px; color: #166534; line-height: 1.6; }
-  .section-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; margin: 0 0 12px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; }
-  .section { margin-bottom: 24px; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th { background: #f1f5f9; padding: 8px 12px; text-align: left; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; }
-  .red-flags { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 16px; margin-bottom: 24px; }
-  .red-flags .section-title { color: #dc2626; border-bottom-color: #fecaca; }
-  .footer { background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 16px 32px; font-size: 11px; color: #94a3b8; line-height: 1.6; }
-  .pearl { background: #eff6ff; border-left: 4px solid #0F4C81; padding: 12px 16px; border-radius: 6px; margin-bottom: 24px; }
-  .pearl label { font-size: 11px; font-weight: 700; text-transform: uppercase; color: #0F4C81; letter-spacing: 0.08em; }
-  .pearl p { margin: 4px 0 0; font-size: 13px; color: #1e40af; }
-  .print-btn { position: fixed; bottom: 24px; right: 24px; background: #0F4C81; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 12px rgba(15,76,129,0.4); }
-</style>
-</head>
-<body>
-<button class="no-print print-btn" onclick="window.print()">🖨️ Print / Save as PDF</button>
-<div class="header">
-  <h1>Diagnosis<span>AI</span></h1>
-  <p>Clinical Decision Support Report</p>
-</div>
-<div class="meta-bar">
-  <span>📅 Generated: ${dateStr} at ${timeStr}</span>
-  <span>⚕️ AI-Assisted Clinical Analysis · For Educational & Decision Support Use Only</span>
-</div>
+  const ds = now.toLocaleDateString("en-IN",{day:"2-digit",month:"long",year:"numeric"});
+  const ts = now.toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"});
+  const li = (arr:string[],col="#00A896")=>arr.map(x=>`<li style="margin:4px 0;color:#334155;font-size:13px;padding-left:12px;position:relative;"><span style="position:absolute;left:0;color:${col}">•</span>${x}</li>`).join("");
+  const dRows = result.differentials.map(d=>`<tr><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#1e293b;">${d.rank}. ${d.diagnosis}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:center;"><span style="padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700;background:${d.likelihood==="High"?"#fee2e2":d.likelihood==="Moderate"?"#fef3c7":"#dbeafe"};color:${d.likelihood==="High"?"#991b1b":d.likelihood==="Moderate"?"#92400e":"#1e40af"};">${d.likelihood}</span></td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;font-size:13px;color:#475569;">${d.reasoning}</td></tr>`).join("");
+  const html=`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>DiagnosisAI Report — ${ds}</title>
+<style>@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}.no-print{display:none!important;}@page{margin:18mm 15mm;}}
+body{font-family:'Segoe UI',Arial,sans-serif;color:#1e293b;margin:0;padding:0;background:#fff;}
+.header{background:linear-gradient(135deg,#0F4C81 0%,#0a3460 100%);color:white;padding:24px 32px;}
+.header h1{margin:0;font-size:24px;font-weight:800;}.header h1 span{color:#00D4BE;}
+.header p{margin:4px 0 0;font-size:12px;opacity:.8;letter-spacing:.1em;text-transform:uppercase;}
+.meta-bar{background:linear-gradient(90deg,#AA00FF,#2979FF,#00E5FF);padding:10px 32px;display:flex;justify-content:space-between;align-items:center;}
+.meta-bar span{color:white;font-size:12px;font-weight:500;}
+.body{padding:28px 32px;}
+.patient-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px;}
+.patient-cell{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;}
+.patient-cell label{display:block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;margin-bottom:3px;}
+.patient-cell span{font-size:14px;font-weight:600;color:#1e293b;}
+.complaint-box{background:#eff6ff;border-left:4px solid #0F4C81;border-radius:6px;padding:14px 16px;margin-bottom:24px;}
+.summary-box{background:#f0fdf4;border-left:4px solid #00A896;border-radius:6px;padding:14px 16px;margin-bottom:24px;}
+.section-title{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;margin:0 0 12px;border-bottom:1px solid #e2e8f0;padding-bottom:6px;}
+.section{margin-bottom:24px;}
+table{width:100%;border-collapse:collapse;font-size:13px;}
+th{background:#f1f5f9;padding:8px 12px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;}
+.red-flags{background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:16px;margin-bottom:24px;}
+.footer{background:#f8fafc;border-top:1px solid #e2e8f0;padding:16px 32px;font-size:11px;color:#94a3b8;line-height:1.6;}
+.pearl{background:#eff6ff;border-left:4px solid #7C4DFF;padding:12px 16px;border-radius:6px;margin-bottom:24px;}
+.print-btn{position:fixed;bottom:24px;right:24px;background:linear-gradient(135deg,#AA00FF,#2979FF,#00E5FF);color:white;border:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 4px 20px rgba(170,0,255,0.4);}
+</style></head><body>
+<button class="no-print print-btn" onclick="window.print()">🖨️ Print / Save PDF</button>
+<div class="header"><h1>Diagnosis<span>AI</span></h1><p>Clinical Decision Support Report</p></div>
+<div class="meta-bar"><span>📅 ${ds} at ${ts}</span><span>AI-Assisted Clinical Analysis · Educational Use Only</span></div>
 <div class="body">
-
-  <div class="patient-grid">
-    <div class="patient-cell"><label>Age</label><span>${patientInfo.age || "—"}</span></div>
-    <div class="patient-cell"><label>Sex</label><span>${patientInfo.sex ? patientInfo.sex.charAt(0).toUpperCase() + patientInfo.sex.slice(1) : "—"}</span></div>
-    <div class="patient-cell"><label>Duration</label><span>${patientInfo.duration || "—"}</span></div>
-    <div class="patient-cell" style="grid-column:span 3"><label>Severity</label><span>${patientInfo.severity || "—"}</span></div>
-  </div>
-
-  <div class="complaint-box">
-    <label>Chief Complaint</label>
-    <p>${patientInfo.chiefComplaint}</p>
-  </div>
-
-  ${filesSection}
-
-  <div class="summary-box">
-    <label>Clinical Summary</label>
-    <p>${result.summary}</p>
-  </div>
-
-  ${result.investigationFindings?.length ? `
-  <div class="section">
-    <h3 class="section-title">📋 Investigation Findings</h3>
-    <ul style="margin:0;padding-left:0;list-style:none;">${listItems(result.investigationFindings, "#00A896")}</ul>
-  </div>` : ""}
-
-  <div class="section">
-    <h3 class="section-title">🧠 Differential Diagnosis</h3>
-    <table>
-      <thead><tr><th>Diagnosis</th><th style="text-align:center;width:100px;">Likelihood</th><th>Clinical Reasoning</th></tr></thead>
-      <tbody>${diffRows}</tbody>
-    </table>
-  </div>
-
-  ${result.redFlags?.length ? `
-  <div class="red-flags">
-    <h3 class="section-title">⚠️ Red Flags — Urgent Evaluation Required</h3>
-    <ul style="margin:0;padding-left:0;list-style:none;">${listItems(result.redFlags, "#dc2626")}</ul>
-  </div>` : ""}
-
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;">
-    <div class="section" style="margin:0">
-      <h3 class="section-title">🔬 Recommended Workup</h3>
-      <ul style="margin:0;padding-left:0;list-style:none;">${listItems(result.recommendedWorkup ?? [], "#0F4C81")}</ul>
-    </div>
-    <div class="section" style="margin:0">
-      <h3 class="section-title">💊 Management Plan</h3>
-      <ul style="margin:0;padding-left:0;list-style:none;">${listItems(result.managementPlan ?? [], "#00A896")}</ul>
-    </div>
-  </div>
-
-  ${result.clinicalPearl ? `
-  <div class="pearl">
-    <label>🩺 Clinical Pearl</label>
-    <p>${result.clinicalPearl}</p>
-  </div>` : ""}
-
+<div class="patient-grid">
+<div class="patient-cell"><label>Age</label><span>${pi.age||"—"}</span></div>
+<div class="patient-cell"><label>Sex</label><span>${pi.sex?pi.sex[0].toUpperCase()+pi.sex.slice(1):"—"}</span></div>
+<div class="patient-cell"><label>Duration</label><span>${pi.duration||"—"}</span></div>
+<div class="patient-cell" style="grid-column:span 3"><label>Severity</label><span>${pi.severity||"—"}</span></div>
 </div>
-<div class="footer">
-  <strong>⚠️ DISCLAIMER:</strong> ${result.disclaimer || "This report is generated by an AI system for educational and clinical decision-support purposes only. It does not constitute a medical diagnosis, replace clinical examination, or supersede the judgment of a qualified clinician. Always correlate with the full clinical picture. DiagnosisAI — Powered by Groq × LLaMA 3.3 · Developed by Satya Sundar Thakur"}
+<div class="complaint-box"><label style="font-size:11px;font-weight:700;text-transform:uppercase;color:#3b82f6;letter-spacing:.08em;">Chief Complaint</label><p style="margin:6px 0 0;font-size:14px;color:#1e293b;font-weight:500;">${pi.chiefComplaint}</p></div>
+${files.length?`<div class="section"><h3 class="section-title">📎 Uploaded Documents</h3>${files.map(f=>`<div style="font-size:13px;color:#475569;margin:4px 0;">📄 ${f.name} (${f.size})</div>`).join("")}</div>`:""}
+<div class="summary-box"><label style="font-size:11px;font-weight:700;text-transform:uppercase;color:#059669;letter-spacing:.08em;">Clinical Summary</label><p style="margin:6px 0 0;font-size:13px;color:#166534;line-height:1.6;">${result.summary}</p></div>
+${result.investigationFindings?.length?`<div class="section"><h3 class="section-title">🔬 Investigation Findings</h3><ul style="margin:0;padding-left:0;list-style:none;">${li(result.investigationFindings,"#00A896")}</ul></div>`:""}
+<div class="section"><h3 class="section-title">🧠 Differential Diagnosis</h3><table><thead><tr><th>Diagnosis</th><th style="text-align:center;width:100px;">Likelihood</th><th>Clinical Reasoning</th></tr></thead><tbody>${dRows}</tbody></table></div>
+${result.redFlags?.length?`<div class="red-flags"><h3 class="section-title" style="color:#dc2626;border-bottom-color:#fecaca;">⚠️ Red Flags</h3><ul style="margin:0;padding-left:0;list-style:none;">${li(result.redFlags,"#dc2626")}</ul></div>`:""}
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;">
+<div class="section" style="margin:0"><h3 class="section-title">📋 Recommended Workup</h3><ul style="margin:0;padding-left:0;list-style:none;">${li(result.recommendedWorkup??[],"#0F4C81")}</ul></div>
+<div class="section" style="margin:0"><h3 class="section-title">💊 Management Plan</h3><ul style="margin:0;padding-left:0;list-style:none;">${li(result.managementPlan??[],"#00A896")}</ul></div>
 </div>
-</body>
-</html>`;
-
-  const w = window.open("", "_blank");
-  if (w) {
-    w.document.write(html);
-    w.document.close();
-    setTimeout(() => w.print(), 600);
-  }
+${result.clinicalPearl?`<div class="pearl"><label style="font-size:11px;font-weight:700;text-transform:uppercase;color:#7C4DFF;letter-spacing:.08em;">🩺 Clinical Pearl</label><p style="margin:4px 0 0;font-size:13px;color:#4527a0;">${result.clinicalPearl}</p></div>`:""}
+</div>
+<div class="footer"><strong>⚠️ DISCLAIMER:</strong> ${result.disclaimer||"This report is AI-generated for educational and clinical decision-support purposes only. It does not replace professional clinical examination or judgment."}<br><br>DiagnosisAI — Powered by Groq × LLaMA 3.3 · LLaMA 4 Vision · Developed by Satya Sundar Thakur</div>
+</body></html>`;
+  const w = window.open("","_blank");
+  if (w) { w.document.write(html); w.document.close(); setTimeout(()=>w.print(),600); }
 }
 
-// ─── sub-components ───────────────────────────────────────────────────────────
-
-function LikelihoodBadge({ level }: { level: "High" | "Moderate" | "Low" }) {
-  const s: Record<string, string> = {
-    High: "bg-red-100 text-red-800 border-red-300",
-    Moderate: "bg-amber-100 text-amber-800 border-amber-300",
-    Low: "bg-sky-100 text-sky-800 border-sky-300",
-  };
-  return <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${s[level]}`}>{level}</span>;
-}
-
-function FileUploadZone({
-  files, onAdd, onRemove,
-}: {
-  files: UploadedFile[];
-  onAdd: (files: File[]) => void;
-  onRemove: (id: string) => void;
-}) {
-  const [dragging, setDragging] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const handleDrop = useCallback((e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault(); setDragging(false);
-    const items = Array.from(e.dataTransfer.files).filter(f => ACCEPTED_TYPES.includes(f.type));
-    if (items.length) onAdd(items);
-  }, [onAdd]);
-
-  const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const items = Array.from(e.target.files ?? []);
-    if (items.length) onAdd(items);
-    e.target.value = "";
-  };
-
+/* ─────────────── DOODLE COMPONENTS ─────────────── */
+function DoodleHeartbeat() {
   return (
-    <div className="space-y-3">
-      <div
-        onDrop={handleDrop}
-        onDragOver={e => { e.preventDefault(); setDragging(true); }}
-        onDragLeave={() => setDragging(false)}
-        onClick={() => inputRef.current?.click()}
-        className={`cursor-pointer rounded-xl border-2 border-dashed px-6 py-8 text-center transition-all ${
-          dragging ? "border-[#0F4C81] bg-blue-50" : "border-slate-300 bg-slate-50 hover:border-[#0F4C81] hover:bg-blue-50"
-        }`}
-      >
-        <Upload className="mx-auto mb-2 h-7 w-7 text-slate-400" />
-        <p className="text-sm font-medium text-slate-600">
-          Drag & drop files here, or <span className="text-[#0F4C81] underline">browse</span>
-        </p>
-        <p className="mt-1 text-xs text-slate-400">
-          Images (JPG, PNG, WEBP) · PDF reports · Text files — max 10 MB each
-        </p>
-        <input ref={inputRef} type="file" multiple accept={ACCEPTED_TYPES.join(",")}
-          className="hidden" onChange={handleChange} />
-      </div>
+    <svg width="420" height="70" className="dia-doodle" style={{ top:"82px", left:"50%", transform:"translateX(-50%)", opacity:0.11 }}>
+      <defs>
+        <linearGradient id="ecgGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#FF1744"/><stop offset="50%" stopColor="#00E5FF"/><stop offset="100%" stopColor="#AA00FF"/>
+        </linearGradient>
+      </defs>
+      <path d="M0,35 L80,35 L95,12 L108,58 L121,35 L148,35 L165,5 L178,65 L191,35 L420,35"
+        fill="none" stroke="url(#ecgGrad)" strokeWidth="2.5" strokeLinecap="round"
+        strokeDasharray="900" style={{ animation:"dia-draw 4s ease-in-out infinite" }} />
+    </svg>
+  );
+}
+function DoodlePill({ style }:{style?:CSSProperties}) {
+  return (
+    <svg width="70" height="28" className="dia-doodle" style={style}>
+      <defs><linearGradient id="pillG" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stopColor="#FF6D00"/><stop offset="100%" stopColor="#FFD600"/>
+      </linearGradient></defs>
+      <rect x="2" y="2" width="66" height="24" rx="12" fill="url(#pillG)" stroke="#FF6D00" strokeWidth="1"/>
+      <line x1="35" y1="2" x2="35" y2="26" stroke="rgba(255,255,255,0.3)" strokeWidth="1"/>
+    </svg>
+  );
+}
+function DoodleDNA({ style }:{style?:CSSProperties}) {
+  const dots = Array.from({length:10},(_,i)=>i);
+  return (
+    <svg width="40" height="200" className="dia-doodle" style={style}>
+      {dots.map(i=>{
+        const y = i*20+10; const x1=8, x2=32;
+        const lx = i%2===0?x1:x2; const rx = i%2===0?x2:x1;
+        return (
+          <g key={i}>
+            <line x1={x1} y1={y} x2={x2} y2={y} stroke="rgba(170,0,255,0.5)" strokeWidth="1.5"/>
+            <circle cx={lx} cy={y} r="4" fill="#AA00FF" style={{ animation:`dia-pulse-dot 2s ease-in-out ${i*0.2}s infinite` }}/>
+            <circle cx={rx} cy={y} r="4" fill="#00E5FF" style={{ animation:`dia-pulse-dot 2s ease-in-out ${i*0.2+0.5}s infinite` }}/>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+function DoodleCross({ style, color="#00E676" }:{style?:CSSProperties;color?:string}) {
+  return (
+    <svg width="32" height="32" className="dia-doodle" style={style}>
+      <rect x="10" y="2" width="12" height="28" rx="4" fill={color}/>
+      <rect x="2" y="10" width="28" height="12" rx="4" fill={color}/>
+    </svg>
+  );
+}
+function DoodleAtom({ style }:{style?:CSSProperties}) {
+  return (
+    <svg width="90" height="90" className="dia-doodle" style={style}>
+      <defs><linearGradient id="atomG" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#2979FF"/><stop offset="100%" stopColor="#00E5FF"/>
+      </linearGradient></defs>
+      <ellipse cx="45" cy="45" rx="40" ry="18" fill="none" stroke="url(#atomG)" strokeWidth="1.5"/>
+      <ellipse cx="45" cy="45" rx="40" ry="18" fill="none" stroke="url(#atomG)" strokeWidth="1.5" transform="rotate(60 45 45)"/>
+      <ellipse cx="45" cy="45" rx="40" ry="18" fill="none" stroke="url(#atomG)" strokeWidth="1.5" transform="rotate(120 45 45)"/>
+      <circle cx="45" cy="45" r="6" fill="#00E5FF"/>
+      <circle cx="45" cy="7" r="3.5" fill="#2979FF" style={{ animation:"dia-orbit 4s linear infinite", transformOrigin:"45px 45px" }}/>
+    </svg>
+  );
+}
+function DoodleStethoscope({ style }:{style?:CSSProperties}) {
+  return (
+    <svg width="100" height="120" className="dia-doodle" style={style}>
+      <defs><linearGradient id="stetG" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#FF1744"/><stop offset="100%" stopColor="#FF6D00"/>
+      </linearGradient></defs>
+      <path d="M30,10 Q30,50 50,60 Q70,70 70,90 A20,20 0 1,1 30,90" fill="none" stroke="url(#stetG)" strokeWidth="4" strokeLinecap="round"/>
+      <circle cx="30" cy="10" r="6" fill="url(#stetG)"/>
+      <circle cx="70" cy="10" r="6" fill="url(#stetG)"/>
+      <path d="M30,10 Q30,18 38,22" fill="none" stroke="url(#stetG)" strokeWidth="3" strokeLinecap="round"/>
+    </svg>
+  );
+}
 
-      {files.length > 0 && (
-        <div className="space-y-2">
-          {files.map(f => (
-            <div key={f.id} className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2.5">
-              {f.type === "image" && f.preview
-                ? <img src={f.preview} alt={f.name} className="h-10 w-10 rounded object-cover border border-slate-200 flex-shrink-0" />
-                : <div className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg ${f.type === "pdf" ? "bg-red-50" : "bg-slate-100"}`}>
-                    {f.type === "pdf" ? <FileText className="h-5 w-5 text-red-500" /> : <FileText className="h-5 w-5 text-slate-500" />}
-                  </div>
-              }
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-slate-700">{f.name}</p>
-                <p className="text-xs text-slate-400">
-                  {f.type === "image" ? "Image" : f.type === "pdf" ? "PDF Document" : "Text File"} · {f.size}
-                </p>
-              </div>
-              <button onClick={() => onRemove(f.id)} className="flex-shrink-0 rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-500">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          ))}
+/* ─────────────── CURSOR GLOW ─────────────── */
+function CursorGlow() {
+  useEffect(()=>{
+    const h = (e:PointerEvent)=>{
+      document.documentElement.style.setProperty("--mx",`${e.clientX}px`);
+      document.documentElement.style.setProperty("--my",`${e.clientY}px`);
+    };
+    window.addEventListener("pointermove",h,{passive:true});
+    return ()=>window.removeEventListener("pointermove",h);
+  },[]);
+  return <div className="dia-cursor"/>;
+}
+
+/* ─────────────── SUB-COMPONENTS ─────────────── */
+function LikelihoodBadge({level}:{level:"High"|"Moderate"|"Low"}) {
+  const cls = level==="High"?"dia-badge-high":level==="Moderate"?"dia-badge-moderate":"dia-badge-low";
+  return <span className={`dia-badge ${cls}`}>{level}</span>;
+}
+
+function FileUploadZone({ files, onAdd, onRemove }:{ files:UploadedFile[]; onAdd:(f:File[])=>void; onRemove:(id:string)=>void; }) {
+  const [drag, setDrag] = useState(false);
+  const ref = useRef<HTMLInputElement>(null);
+  const handleDrop = useCallback((e:DragEvent<HTMLDivElement>)=>{ e.preventDefault(); setDrag(false); const fs = Array.from(e.dataTransfer.files).filter(f=>ACCEPTED.includes(f.type)); if(fs.length) onAdd(fs); },[onAdd]);
+  const handleChange = (e:ChangeEvent<HTMLInputElement>)=>{ const fs=Array.from(e.target.files??[]); if(fs.length) onAdd(fs); e.target.value=""; };
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
+      <div className={`dia-upload-zone${drag?" dragging":""}`}
+        onDrop={handleDrop} onDragOver={e=>{e.preventDefault();setDrag(true);}} onDragLeave={()=>setDrag(false)}
+        onClick={()=>ref.current?.click()}>
+        <div style={{marginBottom:"10px",fontSize:"32px"}}>⬆️</div>
+        <p style={{margin:"0 0 4px",fontWeight:700,fontSize:"14px",color:"rgba(255,255,255,0.85)"}}>Drop files or <span style={{color:"#00E5FF"}}>browse</span></p>
+        <p style={{margin:0,fontSize:"12px",color:"rgba(255,255,255,0.4)"}}>X-rays, lab reports, PDFs, prescriptions — JPG · PNG · PDF · TXT</p>
+        <input ref={ref} type="file" multiple accept={ACCEPTED.join(",")} style={{display:"none"}} onChange={handleChange}/>
+      </div>
+      {files.map(f=>(
+        <div key={f.id} className="dia-file-item">
+          {f.type==="image"&&f.preview
+            ? <img src={f.preview} alt={f.name} style={{width:44,height:44,objectFit:"cover",borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",flexShrink:0}}/>
+            : <div style={{width:44,height:44,borderRadius:8,background:`rgba(${f.type==="pdf"?"255,23,68":"100,100,255"},0.15)`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:"20px"}}>{f.type==="pdf"?"📄":"📝"}</div>
+          }
+          <div style={{minWidth:0,flex:1}}>
+            <p style={{margin:0,fontSize:"13px",fontWeight:600,color:"rgba(255,255,255,0.9)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.name}</p>
+            <p style={{margin:"2px 0 0",fontSize:"11px",color:"rgba(255,255,255,0.4)"}}>{f.type==="image"?"Image":f.type==="pdf"?"PDF":"Text"} · {f.size}</p>
+          </div>
+          <button onClick={()=>onRemove(f.id)} style={{background:"none",border:"none",color:"rgba(255,255,255,0.35)",cursor:"pointer",fontSize:"18px",padding:"4px",transition:"color 0.2s",flexShrink:0}}
+            onMouseEnter={e=>(e.currentTarget.style.color="#FF1744")} onMouseLeave={e=>(e.currentTarget.style.color="rgba(255,255,255,0.35)")}>✕</button>
         </div>
-      )}
+      ))}
     </div>
   );
 }
 
-function ResultsPanel({
-  result, patientInfo, uploadedFiles,
-}: {
-  result: DiagnosisResult;
-  patientInfo: { age: string; sex: string; chiefComplaint: string; duration: string; severity: string };
-  uploadedFiles: UploadedFile[];
-}) {
+function ResultsPanel({ result, pi, files }:{ result:DiagnosisResult; pi:{age:string;sex:string;chiefComplaint:string;duration:string;severity:string}; files:UploadedFile[]; }) {
+  const rows = [
+    { icon:"🔬", title:"Investigation Findings", items:result.investigationFindings, glow:"glow-green", col:"#00E676", visible:result.investigationFindings?.length>0 },
+    { icon:"⚠️", title:"Red Flags", items:result.redFlags, glow:"glow-red", col:"#FF1744", visible:result.redFlags?.length>0 },
+    { icon:"📋", title:"Recommended Workup", items:result.recommendedWorkup??[], glow:"glow-cyan", col:"#00E5FF", visible:true },
+    { icon:"💊", title:"Management Plan", items:result.managementPlan??[], glow:"glow-blue", col:"#2979FF", visible:true },
+  ];
   return (
-    <div className="space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      {/* Download button */}
-      <Button
-        onClick={() => generateAndDownloadPDF(result, patientInfo, uploadedFiles)}
-        className="w-full gap-2 font-semibold"
-        style={{ background: "linear-gradient(90deg, #0F4C81 0%, #00A896 100%)" }}
-      >
-        <Download className="h-4 w-4" />
-        Download PDF Report
-      </Button>
-
+    <div style={{display:"flex",flexDirection:"column",gap:"16px",animation:"dia-float2 0.5s ease-out"}}>
+      <button className="dia-btn-download" onClick={()=>openPDFReport(result,pi,files)}>⬇ Download PDF Report</button>
       {/* Summary */}
-      <Card className="border-l-4 border-l-[#00A896] border-0 bg-emerald-50 shadow-sm">
-        <CardContent className="pt-4">
-          <p className="text-[11px] font-bold uppercase tracking-widest text-[#00A896]">Clinical Summary</p>
-          <p className="mt-1.5 text-sm text-slate-700 leading-relaxed">{result.summary}</p>
-        </CardContent>
-      </Card>
-
-      {/* Investigation findings */}
-      {result.investigationFindings?.length > 0 && (
-        <Card className="border-0 shadow-md">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-sm font-semibold text-[#00A896]">
-              <FileSearch className="h-4 w-4" />Investigation Findings
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul className="space-y-1.5">
-              {result.investigationFindings.map((f, i) => (
-                <li key={i} className="flex items-start gap-2 text-sm text-slate-700">
-                  <Paperclip className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-[#00A896]" />{f}
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-      )}
-
+      <div className="dia-card glow-green" style={{padding:"18px 20px"}}>
+        <p style={{margin:"0 0 8px",fontSize:"10px",fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:"#00E676"}}>Clinical Summary</p>
+        <p style={{margin:0,fontSize:"13px",lineHeight:1.65,color:"rgba(255,255,255,0.82)"}}>{result.summary}</p>
+      </div>
       {/* Differentials */}
-      <Card className="border-0 shadow-md">
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-sm font-semibold text-[#0F4C81]">
-            <Brain className="h-4 w-4" />Differential Diagnosis
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {result.differentials.map(d => (
-            <div key={d.rank} className="rounded-lg border border-slate-200 bg-slate-50 p-3.5">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-[#0F4C81] text-[10px] font-bold text-white">{d.rank}</span>
-                  <span className="font-semibold text-slate-800 text-sm">{d.diagnosis}</span>
+      <div className="dia-card glow-violet" style={{padding:"18px 20px"}}>
+        <p className="dia-section-title">🧠 Differential Diagnosis</p>
+        <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
+          {result.differentials.map(d=>(
+            <div key={d.rank} className="dia-diff-item">
+              <div style={{display:"flex",alignItems:"center",gap:"10px",justifyContent:"space-between",marginBottom:"6px"}}>
+                <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
+                  <span style={{width:22,height:22,borderRadius:"50%",background:"linear-gradient(135deg,#AA00FF,#2979FF)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"10px",fontWeight:800,flexShrink:0}}>{d.rank}</span>
+                  <span style={{fontWeight:700,fontSize:"13px",color:"rgba(255,255,255,0.92)"}}>{d.diagnosis}</span>
                 </div>
-                <LikelihoodBadge level={d.likelihood} />
+                <LikelihoodBadge level={d.likelihood}/>
               </div>
-              <p className="mt-2 pl-7 text-xs text-slate-600 leading-relaxed">{d.reasoning}</p>
+              <p style={{margin:0,fontSize:"12px",color:"rgba(255,255,255,0.55)",lineHeight:1.55,paddingLeft:30}}>{d.reasoning}</p>
             </div>
           ))}
-        </CardContent>
-      </Card>
-
-      {/* Red Flags */}
-      {result.redFlags?.length > 0 && (
-        <Card className="border-red-200 bg-red-50 shadow-sm border">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-sm font-semibold text-red-700">
-              <AlertTriangle className="h-4 w-4" />Red Flags
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul className="space-y-1.5">
-              {result.redFlags.map((f, i) => (
-                <li key={i} className="flex items-start gap-2 text-sm text-red-800">
-                  <ShieldAlert className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-red-600" />{f}
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Workup + Management */}
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Card className="border-0 shadow-md">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-sm font-semibold text-[#0F4C81]">
-              <ClipboardList className="h-4 w-4" />Recommended Workup
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul className="space-y-1.5">
-              {(result.recommendedWorkup ?? []).map((item, i) => (
-                <li key={i} className="flex items-start gap-2 text-xs text-slate-700">
-                  <CheckCircle2 className="mt-0.5 h-3 w-3 flex-shrink-0 text-[#0F4C81]" />{item}
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-        <Card className="border-0 shadow-md">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-sm font-semibold text-[#00A896]">
-              <Activity className="h-4 w-4" />Management Plan
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul className="space-y-1.5">
-              {(result.managementPlan ?? []).map((item, i) => (
-                <li key={i} className="flex items-start gap-2 text-xs text-slate-700">
-                  <CheckCircle2 className="mt-0.5 h-3 w-3 flex-shrink-0 text-[#00A896]" />{item}
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
+        </div>
       </div>
-
+      {/* Findings rows */}
+      {rows.filter(r=>r.visible).map(r=>(
+        <div key={r.title} className={`dia-card ${r.glow}`} style={{padding:"18px 20px"}}>
+          <p className="dia-section-title">{r.icon} {r.title}</p>
+          <ul style={{margin:0,padding:0,listStyle:"none",display:"flex",flexDirection:"column",gap:"6px"}}>
+            {r.items.map((item,i)=>(
+              <li key={i} style={{fontSize:"12px",color:"rgba(255,255,255,0.72)",display:"flex",gap:"8px",alignItems:"flex-start",lineHeight:1.5}}>
+                <span style={{color:r.col,flexShrink:0,marginTop:"1px"}}>▸</span>{item}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
       {/* Pearl */}
       {result.clinicalPearl && (
-        <Card className="border-l-4 border-l-[#0F4C81] border-0 bg-blue-50 shadow-sm">
-          <CardContent className="pt-4">
-            <p className="text-[11px] font-bold uppercase tracking-widest text-[#0F4C81]">Clinical Pearl</p>
-            <p className="mt-1 text-sm text-slate-700">{result.clinicalPearl}</p>
-          </CardContent>
-        </Card>
+        <div className="dia-card glow-rainbow" style={{padding:"18px 20px",borderLeft:"4px solid #AA00FF"}}>
+          <p style={{margin:"0 0 6px",fontSize:"10px",fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:"#AA00FF"}}>🩺 Clinical Pearl</p>
+          <p style={{margin:0,fontSize:"13px",color:"rgba(255,255,255,0.8)",lineHeight:1.6}}>{result.clinicalPearl}</p>
+        </div>
       )}
-
-      <p className="rounded-lg bg-slate-100 px-4 py-3 text-[10px] text-slate-500 leading-relaxed">
-        ⚠️ {result.disclaimer || "For educational and decision-support purposes only. Does not replace clinical judgment or examination."}
+      <p style={{fontSize:"10px",color:"rgba(255,255,255,0.3)",lineHeight:1.6,padding:"12px 16px",background:"rgba(255,255,255,0.03)",borderRadius:"10px"}}>
+        ⚠️ {result.disclaimer||"For educational and decision-support use only. Does not replace clinical judgment."}
       </p>
     </div>
   );
 }
 
-// ─── main ────────────────────────────────────────────────────────────────────
-
+/* ─────────────── MAIN ─────────────── */
 function DiagnosisAI() {
-  const [age, setAge] = useState("");
-  const [sex, setSex] = useState("");
-  const [chiefComplaint, setChiefComplaint] = useState("");
-  const [duration, setDuration] = useState("");
-  const [severity, setSeverity] = useState("");
-  const [selectedSystems, setSelectedSystems] = useState<string[]>([]);
-  const [history, setHistory] = useState("");
-  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
-  const [processingFiles, setProcessingFiles] = useState(false);
-  const [apiKey, setApiKey] = useState(
-    () => typeof window !== "undefined" ? localStorage.getItem("groq_api_key") ?? "" : ""
-  );
-  const [showApiSettings, setShowApiSettings] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [loadingStep, setLoadingStep] = useState("");
-  const [result, setResult] = useState<DiagnosisResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [age,setAge]=useState("");
+  const [sex,setSex]=useState("");
+  const [cc,setCc]=useState("");
+  const [dur,setDur]=useState("");
+  const [sev,setSev]=useState("");
+  const [sys,setSys]=useState<string[]>([]);
+  const [hist,setHist]=useState("");
+  const [files,setFiles]=useState<UploadedFile[]>([]);
+  const [procFiles,setProcFiles]=useState(false);
+  const [apiKey,setApiKey]=useState(()=>typeof window!=="undefined"?localStorage.getItem("groq_api_key")??"":"");
+  const [showApi,setShowApi]=useState(false);
+  const [loading,setLoading]=useState(false);
+  const [loadStep,setLoadStep]=useState("");
+  const [result,setResult]=useState<DiagnosisResult|null>(null);
+  const [error,setError]=useState<string|null>(null);
 
-  const toggleSystem = useCallback((s: string) => {
-    setSelectedSystems(p => p.includes(s) ? p.filter(x => x !== s) : [...p, s]);
-  }, []);
+  const toggleSys = useCallback((s:string)=>setSys(p=>p.includes(s)?p.filter(x=>x!==s):[...p,s]),[]);
 
-  const handleAddFiles = useCallback(async (files: File[]) => {
-    setProcessingFiles(true);
+  const handleAddFiles = useCallback(async(fs:File[])=>{
+    setProcFiles(true);
+    try { const p = await Promise.all(fs.map(processFile)); setFiles(prev=>[...prev,...p]); }
+    finally { setProcFiles(false); }
+  },[]);
+
+  const handleSubmit = useCallback(async()=>{
+    if (!cc.trim()&&files.length===0){ setError("Enter a chief complaint or upload investigation files."); return; }
+    const key=apiKey.trim();
+    if (!key){ setError("Groq API key required — expand API Settings."); setShowApi(true); return; }
+    setError(null); setResult(null); setLoading(true);
     try {
-      const processed = await Promise.all(files.map(processFile));
-      setUploadedFiles(p => [...p, ...processed]);
-    } finally {
-      setProcessingFiles(false);
-    }
-  }, []);
+      localStorage.setItem("groq_api_key",key);
+      setLoadStep(files.some(f=>f.type==="image")?"Analysing images with vision AI…":"Generating clinical analysis…");
+      setResult(await runDiagnosis(key,age,sex,cc,dur,sev,sys,hist,files));
+    } catch(e){ setError(e instanceof Error?e.message:"Unexpected error."); }
+    finally{ setLoading(false); setLoadStep(""); }
+  },[apiKey,age,sex,cc,dur,sev,sys,hist,files]);
 
-  const handleRemoveFile = useCallback((id: string) => {
-    setUploadedFiles(p => p.filter(f => f.id !== id));
-  }, []);
-
-  const patientInfo = { age, sex, chiefComplaint, duration, severity };
-
-  const handleSubmit = useCallback(async () => {
-    if (!chiefComplaint.trim() && uploadedFiles.length === 0) {
-      setError("Please enter a chief complaint or upload investigation files.");
-      return;
-    }
-    const key = apiKey.trim();
-    if (!key) {
-      setError("A Groq API key is required. Expand API Settings below.");
-      setShowApiSettings(true); return;
-    }
-    setError(null); setResult(null); setIsLoading(true);
-    try {
-      localStorage.setItem("groq_api_key", key);
-      const hasImages = uploadedFiles.some(f => f.type === "image");
-      if (hasImages) setLoadingStep("Analysing images with vision AI…");
-      else setLoadingStep("Generating clinical analysis…");
-      const res = await runDiagnosis(key, age, sex, chiefComplaint, duration, severity, selectedSystems, history, uploadedFiles);
-      setResult(res);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "An unexpected error occurred.");
-    } finally {
-      setIsLoading(false); setLoadingStep("");
-    }
-  }, [apiKey, age, sex, chiefComplaint, duration, severity, selectedSystems, history, uploadedFiles]);
-
-  const handleReset = () => {
-    setAge(""); setSex(""); setChiefComplaint(""); setDuration(""); setSeverity("");
-    setSelectedSystems([]); setHistory(""); setUploadedFiles([]);
-    setResult(null); setError(null);
-  };
+  const pi = { age, sex, chiefComplaint:cc, duration:dur, severity:sev };
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: "#F0F4F8" }}>
-      {/* Header */}
-      <header style={{ background: "linear-gradient(135deg, #0F4C81 0%, #0a3460 100%)" }}>
-        <div className="mx-auto max-w-5xl px-4 py-5">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/15">
-              <Stethoscope className="h-5 w-5 text-white" />
-            </div>
+    <>
+      <style dangerouslySetInnerHTML={{__html:STYLES}}/>
+      <div className="dia-app" id="dia-root">
+        <CursorGlow/>
+
+        {/* background doodles */}
+        <DoodleHeartbeat/>
+        <DoodlePill style={{ top:160, right:80, animation:"dia-float 6s ease-in-out infinite" }}/>
+        <DoodlePill style={{ top:320, left:30, animation:"dia-float2 7s ease-in-out 1s infinite", transform:"rotate(45deg)" }}/>
+        <DoodleDNA style={{ top:200, right:20, animation:"dia-dna 8s linear infinite" }}/>
+        <DoodleDNA style={{ top:400, left:5, animation:"dia-dna 10s linear 2s infinite", opacity:0.08 }}/>
+        <DoodleCross style={{ top:130, left:60, animation:"dia-float 5s ease-in-out 0.5s infinite" }} color="#00E676"/>
+        <DoodleCross style={{ top:500, right:50, animation:"dia-float2 8s ease-in-out 2s infinite" }} color="#FFD600"/>
+        <DoodleCross style={{ top:700, left:100, animation:"dia-float 9s ease-in-out 1s infinite" }} color="#AA00FF"/>
+        <DoodleAtom style={{ bottom:200, left:20, animation:"dia-float2 7s ease-in-out infinite" }}/>
+        <DoodleStethoscope style={{ bottom:120, right:30, animation:"dia-float 8s ease-in-out 3s infinite" }}/>
+
+        {/* header */}
+        <header style={{ position:"relative", zIndex:10, padding:"0 16px" }}>
+          <div style={{ maxWidth:960, margin:"0 auto", padding:"22px 0", display:"flex", alignItems:"center", gap:14 }}>
+            <div style={{ width:48, height:48, borderRadius:14, background:"rgba(255,255,255,0.08)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:24, border:"1px solid rgba(255,255,255,0.12)", boxShadow:"0 0 20px rgba(0,229,255,0.2)" }}>🩺</div>
             <div>
-              <h1 className="text-xl font-bold tracking-tight text-white">
-                Diagnosis<span style={{ color: "#00D4BE" }}>AI</span>
+              <h1 style={{ margin:0, fontSize:28, fontWeight:800, letterSpacing:"-0.03em" }}>
+                <span className="dia-rainbow-text">DiagnosisAI</span>
               </h1>
-              <p className="text-[11px] font-medium uppercase tracking-widest text-blue-200">
-                Clinical Decision Support
-              </p>
+              <p style={{ margin:0, fontSize:11, fontWeight:600, letterSpacing:"0.12em", textTransform:"uppercase", color:"rgba(255,255,255,0.35)" }}>Clinical Decision Support</p>
             </div>
-            <div className="ml-auto">
-              <Badge variant="outline" className="border-white/30 bg-white/10 text-[11px] text-white">
-                <Activity className="mr-1 h-3 w-3" />AI-Powered
-              </Badge>
+            <div style={{ marginLeft:"auto", display:"flex", gap:8 }}>
+              <span style={{ padding:"4px 12px", borderRadius:999, border:"1px solid rgba(0,229,255,0.3)", fontSize:11, color:"#00E5FF", background:"rgba(0,229,255,0.08)", fontWeight:600 }}>⚡ AI-Powered</span>
+              <span style={{ padding:"4px 12px", borderRadius:999, border:"1px solid rgba(170,0,255,0.3)", fontSize:11, color:"#AA00FF", background:"rgba(170,0,255,0.08)", fontWeight:600 }}>Groq × LLaMA</span>
             </div>
           </div>
+          {/* rainbow divider */}
+          <div style={{ height:2, background:"linear-gradient(90deg,#FF1744,#FF6D00,#FFD600,#00E676,#00E5FF,#2979FF,#AA00FF)", maxWidth:960, margin:"0 auto", borderRadius:1 }}/>
+        </header>
+
+        {/* hero strip */}
+        <div style={{ position:"relative", zIndex:10, padding:"0 16px" }}>
+          <div style={{ maxWidth:960, margin:"0 auto", padding:"14px 0" }}>
+            <p style={{ margin:0, fontSize:13, color:"rgba(255,255,255,0.55)", lineHeight:1.5 }}>
+              Upload X-rays, lab reports, or prescriptions — enter symptoms — get a structured AI clinical report with PDF download.
+              <span style={{ marginLeft:8, color:"rgba(255,255,255,0.3)", fontSize:11 }}>For educational &amp; decision-support use only.</span>
+            </p>
+          </div>
         </div>
-      </header>
 
-      {/* Hero strip */}
-      <div className="border-b" style={{ background: "linear-gradient(90deg, #00A896 0%, #00C4B4 100%)" }}>
-        <div className="mx-auto max-w-5xl px-4 py-3">
-          <p className="text-sm font-medium text-white">
-            Enter symptoms, upload investigation reports or prescriptions — AI analyses all inputs and generates a structured clinical report.
-            <span className="ml-2 opacity-75 text-xs">For educational &amp; decision-support use only.</span>
-          </p>
-        </div>
-      </div>
+        {/* main grid */}
+        <main style={{ position:"relative", zIndex:10, maxWidth:960, margin:"0 auto", padding:"24px 16px 64px" }}>
+          <div style={{ display:"grid", gap:24, gridTemplateColumns:"minmax(0,1fr) 420px" }}>
 
-      {/* Body */}
-      <main className="mx-auto max-w-5xl px-4 py-8">
-        <div className="grid gap-8 lg:grid-cols-[1fr_420px]">
-          {/* Left: form */}
-          <div className="space-y-5">
-            {/* Patient demographics */}
-            <Card className="border-0 shadow-md">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-xs font-bold uppercase tracking-wider text-slate-500">Patient Details</CardTitle>
-              </CardHeader>
-              <CardContent className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-slate-600">Age</Label>
-                  <Input type="number" min={0} max={120} placeholder="e.g. 45" value={age} onChange={e => setAge(e.target.value)} className="h-9 text-sm" />
+            {/* ── left: input form ── */}
+            <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
+
+              {/* Patient */}
+              <div className="dia-card glow-cyan" style={{ padding:"20px" }}>
+                <p className="dia-section-title">👤 Patient Details</p>
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
+                  <div><label className="dia-label">Age</label><input className="dia-input" type="number" min={0} max={120} placeholder="e.g. 45" value={age} onChange={e=>setAge(e.target.value)}/></div>
+                  <div><label className="dia-label">Sex</label>
+                    <select className="dia-input" value={sex} onChange={e=>setSex(e.target.value)}>
+                      <option value="">Select</option><option value="male">Male</option><option value="female">Female</option><option value="other">Other</option>
+                    </select>
+                  </div>
                 </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-slate-600">Sex</Label>
-                  <Select value={sex} onValueChange={setSex}>
-                    <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="male">Male</SelectItem>
-                      <SelectItem value="female">Female</SelectItem>
-                      <SelectItem value="other">Other</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </CardContent>
-            </Card>
+              </div>
 
-            {/* Upload zone */}
-            <Card className="border-0 shadow-md">
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-500">
-                  <ImageIcon className="h-3.5 w-3.5" />
-                  Upload Investigations &amp; Prescriptions
-                  <Badge className="ml-1 bg-[#00A896]/15 text-[#00A896] text-[10px]">SOS</Badge>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {processingFiles
-                  ? <div className="flex items-center gap-2 py-4 justify-center text-sm text-slate-500">
-                      <Loader2 className="h-4 w-4 animate-spin" />Processing files…
-                    </div>
-                  : <FileUploadZone files={uploadedFiles} onAdd={handleAddFiles} onRemove={handleRemoveFile} />
+              {/* Upload */}
+              <div className="dia-card glow-rainbow" style={{ padding:"20px" }}>
+                <p className="dia-section-title">
+                  📎 Upload Investigations &amp; Prescriptions
+                  <span style={{ marginLeft:8, padding:"2px 8px", borderRadius:999, background:"rgba(0,229,255,0.15)", color:"#00E5FF", fontSize:"9px", fontWeight:700, letterSpacing:"0.08em", textTransform:"uppercase" }}>SOS</span>
+                </p>
+                {procFiles
+                  ? <div style={{ display:"flex", alignItems:"center", gap:10, justifyContent:"center", padding:"20px 0", color:"rgba(255,255,255,0.5)", fontSize:13 }}><div className="dia-spinner" style={{ width:24, height:24, margin:0 }}/>Processing files…</div>
+                  : <FileUploadZone files={files} onAdd={handleAddFiles} onRemove={id=>setFiles(p=>p.filter(f=>f.id!==id))}/>
                 }
-              </CardContent>
-            </Card>
+              </div>
 
-            {/* Chief complaint */}
-            <Card className="border-0 shadow-md">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                  Chief Complaint
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <Textarea
-                  placeholder="Describe symptoms in detail — onset, character, radiation, aggravating/relieving factors, associated symptoms…"
-                  className="min-h-[110px] resize-none text-sm"
-                  value={chiefComplaint} onChange={e => setChiefComplaint(e.target.value)}
-                />
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-medium text-slate-600">Duration</Label>
-                    <Select value={duration} onValueChange={setDuration}>
-                      <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select" /></SelectTrigger>
-                      <SelectContent>{DURATIONS.map(d => <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>)}</SelectContent>
-                    </Select>
+              {/* Chief complaint */}
+              <div className="dia-card glow-green" style={{ padding:"20px" }}>
+                <p className="dia-section-title">🗣 Chief Complaint</p>
+                <textarea className="dia-input" rows={4}
+                  placeholder="Onset, character, radiation, aggravating/relieving factors, associated symptoms…"
+                  value={cc} onChange={e=>setCc(e.target.value)} style={{ minHeight:100 }}/>
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14, marginTop:14 }}>
+                  <div><label className="dia-label">Duration</label>
+                    <select className="dia-input" value={dur} onChange={e=>setDur(e.target.value)}>
+                      {DURATIONS.map(d=><option key={d.value} value={d.value}>{d.label}</option>)}
+                    </select>
                   </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-medium text-slate-600">Severity</Label>
-                    <Select value={severity} onValueChange={setSeverity}>
-                      <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select" /></SelectTrigger>
-                      <SelectContent>{SEVERITIES.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}</SelectContent>
-                    </Select>
+                  <div><label className="dia-label">Severity</label>
+                    <select className="dia-input" value={sev} onChange={e=>setSev(e.target.value)}>
+                      {SEVERITIES.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}
+                    </select>
                   </div>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
 
-            {/* Body systems */}
-            <Card className="border-0 shadow-md">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-xs font-bold uppercase tracking-wider text-slate-500">Body Systems Involved</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-wrap gap-2">
-                  {BODY_SYSTEMS.map(s => {
-                    const on = selectedSystems.includes(s);
-                    return (
-                      <button key={s} onClick={() => toggleSystem(s)}
-                        className={`rounded-full border px-3 py-1 text-xs font-medium transition-all ${on ? "border-[#0F4C81] bg-[#0F4C81] text-white shadow-sm" : "border-slate-300 bg-white text-slate-600 hover:border-[#0F4C81] hover:text-[#0F4C81]"}`}>
-                        {s}
-                      </button>
-                    );
-                  })}
+              {/* Systems */}
+              <div className="dia-card glow-violet" style={{ padding:"20px" }}>
+                <p className="dia-section-title">🫀 Body Systems Involved</p>
+                <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+                  {BODY_SYSTEMS.map(s=>(
+                    <button key={s} className={`dia-chip${sys.includes(s)?" active":""}`} onClick={()=>toggleSys(s)}>{s}</button>
+                  ))}
                 </div>
-              </CardContent>
-            </Card>
+                {sys.length>0&&<p style={{ margin:"10px 0 0",fontSize:11,color:"rgba(255,255,255,0.35)" }}>{sys.length} system{sys.length>1?"s":""} selected</p>}
+              </div>
 
-            {/* History */}
-            <Card className="border-0 shadow-md">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-xs font-bold uppercase tracking-wider text-slate-500">Relevant History &amp; Notes</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Textarea
-                  placeholder="Past medical history, medications, allergies, family history, social history, recent travel…"
-                  className="min-h-[80px] resize-none text-sm"
-                  value={history} onChange={e => setHistory(e.target.value)}
-                />
-              </CardContent>
-            </Card>
+              {/* History */}
+              <div className="dia-card glow-orange" style={{ padding:"20px" }}>
+                <p className="dia-section-title">📝 History &amp; Notes</p>
+                <textarea className="dia-input" rows={3}
+                  placeholder="PMH, medications, allergies, family history, social history, travel…"
+                  value={hist} onChange={e=>setHist(e.target.value)} style={{ minHeight:80 }}/>
+              </div>
 
-            {/* API Settings */}
-            <Card className="border-0 shadow-md">
-              <button onClick={() => setShowApiSettings(!showApiSettings)} className="flex w-full items-center justify-between px-6 py-4 text-left">
-                <span className="flex items-center gap-2 text-sm font-medium text-slate-600">
-                  <Key className="h-4 w-4 text-slate-400" />API Settings
-                  {apiKey && <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700"><CheckCircle2 className="h-3 w-3" />Key saved</span>}
-                </span>
-                {showApiSettings ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
-              </button>
-              {showApiSettings && (
-                <CardContent className="pt-0 pb-5 space-y-3">
-                  <Separator />
-                  <div className="space-y-1.5 pt-3">
-                    <Label className="text-xs font-medium text-slate-600">Groq API Key</Label>
-                    <Input type="password" placeholder="gsk_…" value={apiKey}
-                      onChange={e => setApiKey(e.target.value)} className="h-9 font-mono text-sm" />
-                    <p className="text-[11px] text-slate-400">
-                      Free keys at <a href="https://console.groq.com" target="_blank" rel="noopener noreferrer" className="text-[#0F4C81] underline">console.groq.com</a>. Stored in browser only.
+              {/* API Settings */}
+              <div className="dia-card glow-blue" style={{ padding:0 }}>
+                <button className="dia-api-toggle" onClick={()=>setShowApi(!showApi)}>
+                  <span style={{ display:"flex", alignItems:"center", gap:8 }}>
+                    🔑 API Settings
+                    {apiKey&&<span style={{ padding:"2px 8px", borderRadius:999, background:"rgba(0,230,118,0.15)", color:"#00E676", fontSize:"10px", fontWeight:700 }}>✓ Key saved</span>}
+                  </span>
+                  <span style={{ fontSize:16 }}>{showApi?"▲":"▼"}</span>
+                </button>
+                {showApi&&(
+                  <div style={{ padding:"0 20px 20px", borderTop:"1px solid rgba(255,255,255,0.07)" }}>
+                    <label className="dia-label" style={{ marginTop:14 }}>Groq API Key</label>
+                    <input className="dia-input" type="password" placeholder="gsk_…"
+                      value={apiKey} onChange={e=>setApiKey(e.target.value)} style={{ fontFamily:"monospace" }}/>
+                    <p style={{ margin:"8px 0 0", fontSize:11, color:"rgba(255,255,255,0.3)" }}>
+                      Free key at <a href="https://console.groq.com" target="_blank" rel="noopener noreferrer" style={{ color:"#00E5FF" }}>console.groq.com</a> · Stored in browser only
                     </p>
                   </div>
-                </CardContent>
-              )}
-            </Card>
-
-            {/* Error */}
-            {error && (
-              <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4">
-                <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-600" />
-                <p className="text-sm text-red-700">{error}</p>
+                )}
               </div>
-            )}
 
-            {/* Actions */}
-            <div className="flex gap-3">
-              <Button onClick={handleSubmit} disabled={isLoading || processingFiles}
-                className="flex-1 h-11 text-sm font-semibold" style={{ backgroundColor: "#0F4C81" }}>
-                {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />{loadingStep || "Analysing…"}</> : <><Brain className="mr-2 h-4 w-4" />Generate AI Report</>}
-              </Button>
-              {(result || error) && (
-                <Button variant="outline" onClick={handleReset} className="h-11 px-5 text-sm">Clear</Button>
+              {/* Error */}
+              {error&&(
+                <div className="dia-error">
+                  <span style={{ fontSize:18, flexShrink:0 }}>⚠️</span>
+                  <span>{error}</span>
+                </div>
               )}
+
+              {/* Actions */}
+              <div style={{ display:"flex", gap:12 }}>
+                <button className="dia-btn-rainbow" onClick={handleSubmit} disabled={loading||procFiles}>
+                  {loading ? <><div className="dia-spinner" style={{ width:20, height:20, margin:0 }}/>{loadStep||"Analysing…"}</> : <>🧠 Generate AI Report</>}
+                </button>
+                {(result||error)&&<button className="dia-btn-secondary" onClick={()=>{setResult(null);setError(null);}}>✕ Clear</button>}
+              </div>
+            </div>
+
+            {/* ── right: results ── */}
+            <div>
+              {!result&&!loading&&(
+                <div className="dia-empty">
+                  <div style={{ fontSize:60, marginBottom:16, filter:"drop-shadow(0 0 20px rgba(170,0,255,0.5))" }}>🩺</div>
+                  <p style={{ margin:"0 0 6px", fontWeight:700, fontSize:15, color:"rgba(255,255,255,0.7)" }}>Your AI clinical report appears here</p>
+                  <p style={{ margin:0, fontSize:13, color:"rgba(255,255,255,0.3)" }}>Upload investigations or describe symptoms, then click Generate.</p>
+                </div>
+              )}
+              {loading&&(
+                <div className="dia-loading">
+                  <div className="dia-spinner"/>
+                  <p style={{ margin:"0 0 4px", fontWeight:600, fontSize:14, color:"rgba(255,255,255,0.8)" }}>{loadStep||"Processing…"}</p>
+                  <p style={{ margin:0, fontSize:12, color:"rgba(255,255,255,0.35)" }}>LLaMA 3.3 70B + LLaMA 4 Vision · Groq</p>
+                </div>
+              )}
+              {result&&!loading&&<ResultsPanel result={result} pi={pi} files={files}/>}
             </div>
           </div>
+        </main>
 
-          {/* Right: results */}
-          <div>
-            {!result && !isLoading && (
-              <div className="flex h-full min-h-[400px] flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-white p-8 text-center">
-                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full" style={{ backgroundColor: "#E8F0F9" }}>
-                  <Stethoscope className="h-7 w-7" style={{ color: "#0F4C81" }} />
-                </div>
-                <p className="text-sm font-medium text-slate-500">Your AI clinical report will appear here.</p>
-                <p className="mt-1 text-xs text-slate-400">Upload investigations or enter symptoms and click Generate.</p>
-              </div>
-            )}
-            {isLoading && (
-              <div className="flex h-full min-h-[400px] flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white p-8">
-                <Loader2 className="mb-4 h-8 w-8 animate-spin" style={{ color: "#0F4C81" }} />
-                <p className="text-sm font-medium text-slate-600">{loadingStep || "Processing…"}</p>
-                <p className="mt-1 text-xs text-slate-400">Powered by LLaMA 3.3 70B + LLaMA 4 Vision</p>
-              </div>
-            )}
-            {result && !isLoading && (
-              <ResultsPanel result={result} patientInfo={patientInfo} uploadedFiles={uploadedFiles} />
-            )}
-          </div>
-        </div>
-      </main>
-
-      <footer className="mt-12 border-t border-slate-200 bg-white">
-        <div className="mx-auto max-w-5xl px-4 py-5 text-center">
-          <p className="text-[11px] text-slate-400">
-            <strong>DiagnosisAI</strong> — Clinical decision support &amp; medical education. Not a substitute for clinical judgment.
-            Groq × LLaMA 3.3 · LLaMA 4 Vision · Built by Satya Sundar Thakur
+        {/* footer */}
+        <footer style={{ position:"relative", zIndex:10, borderTop:"1px solid rgba(255,255,255,0.06)", padding:"20px 16px", textAlign:"center" }}>
+          <div style={{ height:2, background:"linear-gradient(90deg,#FF1744,#FF6D00,#FFD600,#00E676,#00E5FF,#2979FF,#AA00FF)", maxWidth:960, margin:"0 auto 16px", borderRadius:1 }}/>
+          <p style={{ margin:0, fontSize:11, color:"rgba(255,255,255,0.25)" }}>
+            <strong style={{ color:"rgba(255,255,255,0.5)" }}>DiagnosisAI</strong> — clinical decision support &amp; medical education only · not a substitute for clinical judgment<br/>
+            Groq × LLaMA 3.3 · LLaMA 4 Vision · Built by <span style={{ color:"#00E5FF" }}>Satya Sundar Thakur</span>
           </p>
-        </div>
-      </footer>
-    </div>
+        </footer>
+      </div>
+    </>
   );
 }
